@@ -48,12 +48,18 @@ void task_init(void) {
     // 8. 对内核起始地址 0x80000000 的16MB空间做等值映射（将虚拟地址 0x80000000 开始的 16 MB 空间映射到起始物理地址为 0x80000000 的 16MB 空间），PTE_V | PTE_R | PTE_W | PTE_X 为映射的读写权限。
     // 9. 修改对内核空间不同 section 所在页属性的设置，完成对不同section的保护，其中text段的权限为 r-x, rodata 段为 r--, 其他段为 rw-，注意上述两个映射都需要做保护。
     // 10. 将必要的硬件地址（如 0x10000000 为起始地址的 UART ）进行等值映射 ( 可以映射连续 1MB 大小 )，无偏移，PTE_V | PTE_R | PTE_W 为映射的读写权限
-
-    
-    
-    
-
-
+    uint64_t stack_page = alloc_page();
+    uint64_t pgtbl = alloc_page();
+    task[i]->sscratch = 0x1001000 + PAGE_SIZE;
+    task[i]->satp = ((uint64_t)8 << 60) | (pgtbl >> (uint64_t)12) | ((uint64_t)(i & 0xFFF) << 44);
+    create_mapping((uint64_t *)pgtbl, 0x1001000, stack_page, PAGE_SIZE,PTE_V | PTE_R | PTE_W | PTE_U );
+    create_mapping((uint64_t *)pgtbl, 0x1000000, task_addr, PAGE_SIZE, PTE_V | PTE_R | PTE_W | PTE_X | PTE_U);
+    create_mapping((uint64_t *)pgtbl, 0xffffffc000000000, 0x80000000, 16 * 1024 * 1024, PTE_V | PTE_R | PTE_W | PTE_X);
+    create_mapping((uint64_t *)pgtbl, 0x80000000, 0x80000000, 16 * 1024 * 1024, PTE_V | PTE_R | PTE_W | PTE_X);
+    create_mapping((uint64_t *)pgtbl,(uint64_t)&text_start , PHYSICAL_ADDR((uint64_t)&text_start), (uint64_t)&rodata_start-(uint64_t)&text_start, PTE_R | PTE_X);
+    create_mapping((uint64_t *)pgtbl, (uint64_t)&rodata_start, PHYSICAL_ADDR((uint64_t)&rodata_start), (uint64_t)&data_start-(uint64_t)&rodata_start, PTE_R);           
+    create_mapping((uint64_t *)pgtbl, (uint64_t)&data_start, PHYSICAL_ADDR((uint64_t)&data_start), (uint64_t)&user_program_start - (uint64_t)&data_start, PTE_R | PTE_W);
+    create_mapping((uint64_t *)pgtbl, 0x10000000, 0x10000000, 1024 * 1024, PTE_V | PTE_R | PTE_W);    
     printf("[PID = %d] Process Create Successfully!\n", task[i]->pid);
   }
   task_init_done = 1;

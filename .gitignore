@@ -1,4 +1,5 @@
-_MACOSX/
+./_MACOSX/*
+./test
 # Prerequisites
 *.d
 

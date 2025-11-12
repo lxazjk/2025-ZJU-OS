@@ -25,6 +25,24 @@ int alloced_page_num(){
   return alloc_page_num;
 }
 
+/*
+
+38        30 29        21 20        12 11                           0
+-----------------------------------------------------------------------
+|   VPN[2]   |   VPN[1]   |   VPN[0]   |          page offset         |
+-----------------------------------------------------------------------
+                    Sv39 virtual address
+*/
+
+bool check(uint64_t PTE) {
+  return !(PTE & PTE_V);
+}
+uint64_t trans(uint64_t* pgtb) {
+  return (((uint64_t)pgtb >> 12) << 10) | PTE_V;
+}
+uint64_t* back(uint64_t PTE) {
+  return (uint64_t*)((PTE >> 10) << 12);
+}
 void create_mapping(uint64_t *pgtbl, uint64_t va, uint64_t pa, uint64_t sz,
                     int perm) {
   // pgtbl 为根页表的基地址
@@ -44,22 +62,42 @@ void create_mapping(uint64_t *pgtbl, uint64_t va, uint64_t pa, uint64_t sz,
   // 7. 设置二级页表项的内容
   // 8. 设置三级页表项的内容
 
-  // TODO: 请完成你的代码
-  
+  // DONE: 请完成你的代码
+  while(sz > 0) {
+    uint64_t VPN[3] = {(va >> 12) & (0x1ff), (va >> 21) & (0x1ff), (va >> 30) & (0x1ff)};
+    uint64_t PTE[3] = {0};
+    uint64_t *pgtb2, *pgtb3;
+    PTE[2] = pgtbl[VPN[2]];
+    if(check(PTE[2])) {
+      pgtb2 = (uint64_t*)alloc_page();
+      pgtbl[VPN[2]]  = trans(pgtb2);
+    } else {
+      pgtb2 = back(PTE[2]);
+    }
+    
+    PTE[1] = pgtb2[VPN[1]];
+    if(check(PTE[1])) {
+      pgtb3 = (uint64_t*)alloc_page();
+      pgtb2[VPN[1]] = trans(pgtb3);
+    } else {
+      pgtb3 = back(PTE[1]);
+    }
+
+    pgtb3[VPN[0]] = ((pa >> 12) << 10) | (PTE_V | (perm));
+
+    sz -= PAGE_SIZE;
+    va += PAGE_SIZE;
+    pa += PAGE_SIZE;
+  }
 }
 
 void paging_init() { 
-  // 在 vm.c 中编写 paging_init 函数，该函数完成以下工作：
-  // 1. 创建内核的虚拟地址空间，调用 create_mapping 函数将虚拟地址 0xffffffc000000000 开始的 16 MB 空间映射到起始物理地址为 0x80000000 的 16MB 空间，PTE_V | PTE_R | PTE_W | PTE_X 为映射的读写权限。
-  // 2. 对内核起始地址 0x80000000 的16MB空间做等值映射（将虚拟地址 0x80000000 开始的 16 MB 空间映射到起始物理地址为 0x80000000 的 16MB 空间），PTE_V | PTE_R | PTE_W | PTE_X 为映射的读写权限。
-  // 3. 修改对内核空间不同 section 所在页属性的设置，完成对不同section的保护，其中text段的权限为 r-x, rodata 段为 r--, 其他段为 rw-，注意上述两个映射都需要做保护。
-  // 4. 将必要的硬件地址（如 0x10000000 为起始地址的 UART ）进行等值映射 ( 可以映射连续 1MB 大小 )，无偏移，PTE_V | PTE_R | PTE_W 为映射的读写权限
 
-  // 注意：paging_init函数创建的页表只用于内核开启页表之后，进入第一个用户进程之前。进入第一个用户进程之后，就会使用进程页表，而不再使用 paging_init 创建的页表。
-
-  uint64_t *pgtbl = alloc_page();
-  // TODO: 请完成你的代码
-  
+  uint64_t *pgtbl = (uint64_t *)alloc_page();
+  create_mapping(pgtbl, 0xffffffc000000000, 0x80000000, 16 * 1024 * 1024, PTE_V | PTE_R | PTE_W | PTE_X);
+  create_mapping(pgtbl, 0x80000000, 0x80000000, 16 * 1024 * 1024, PTE_V | PTE_R | PTE_W | PTE_X);
+  create_mapping(pgtbl, 0x10000000, 0x10000000, 1024 * 1024, PTE_V | PTE_R | PTE_W);
+  create_mapping(pgtbl, (uint64_t)&text_start, (uint64_t)&text_start,  (uint64_t)&rodata_start - (uint64_t)&text_start, PTE_R | PTE_X);
+  create_mapping(pgtbl, (uint64_t)&rodata_start, (uint64_t)&rodata_start, (uint64_t)&data_start - (uint64_t)&rodata_start, PTE_R);           
+  create_mapping(pgtbl, (uint64_t)&data_start, (uint64_t)&data_start, (uint64_t)&user_program_start - (uint64_t)&data_start, PTE_R | PTE_W); 
 }
-
-

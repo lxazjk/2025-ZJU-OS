@@ -1,0 +1,20 @@
+make -C arch/riscv all
+make[1]: Entering directory '/home/oslab/os_lab/lab5-1/arch/riscv'
+make -C kernel
+make[2]: Entering directory '/home/oslab/os_lab/lab5-1/arch/riscv/kernel'
+riscv64-unknown-elf-gcc  -g -march=rv64imafd -mabi=lp64 -mcmodel=medany -ffunction-sections -fdata-sections -nostartfiles -nostdlib -nostdinc -fno-builtin -static -lgcc  -I/home/oslab/os_lab/lab5-1/include -I/home/oslab/os_lab/lab5-1/arch/riscv/include  -DDEBUG_LOG  -c main.c
+main.c: In function 'start_kernel':
+main.c:9:3: warning: implicit declaration of function 'slub_init' [-Wimplicit-function-declaration]
+    9 |   slub_init();
+      |   ^~~~~~~~~
+main.c:21:1: error: expected '=', ',', ';', 'asm' or '__attribute__' at end of input
+   21 | c
+      | ^
+Makefile:12: recipe for target 'main.o' failed
+make[2]: *** [main.o] Error 1
+make[2]: Leaving directory '/home/oslab/os_lab/lab5-1/arch/riscv/kernel'
+Makefile:2: recipe for target 'all' failed
+make[1]: *** [all] Error 2
+make[1]: Leaving directory '/home/oslab/os_lab/lab5-1/arch/riscv'
+Makefile:31: recipe for target 'vmlinux' failed
+make: *** [vmlinux] Error 2

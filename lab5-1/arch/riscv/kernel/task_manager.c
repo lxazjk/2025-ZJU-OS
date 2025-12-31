@@ -46,9 +46,7 @@ void task_init(void) {
     task[i]->mm.vm = (struct vm_area_struct *)kmalloc(sizeof(struct vm_area_struct));
     // task[i]->mm.vm 指向刚才分配的结构体
     // ->vm_list 访问结构体里的 list_head 成员
-    // & 取地址
     INIT_LIST_HEAD(&(task[i]->mm.vm->vm_list));
-    // 将头节点的其他数据清零，防止脏数据干扰
     task[i]->mm.vm->vm_start = 0;
     task[i]->mm.vm->vm_end = 0;
     task[i]->mm.vm->mapped = 0;

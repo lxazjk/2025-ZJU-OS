@@ -24,78 +24,52 @@ void handler_s(uint64_t cause, uint64_t epc, uint64_t sp) {
   else if (cause >> 63 == 0) {
     // instruction page fault
     // instruction page fault
-  if (cause == 0xc || cause == 0xd || cause == 0xf) {
-    uint64_t stval;
-    uint64_t* sp_ptr = (uint64_t*)(sp); // sp_ptr 指向栈上的 TrapContext，sp_ptr[16] 是 sepc
+   if (cause == 0xc || cause == 0xd || cause == 0xf) {
+      uint64_t stval;
+      uint64_t* sp_ptr = (uint64_t*)(sp);
 
-    // TODO: 
-    // 1. get the faulting address from stval register
-    // 使用内联汇编读取 CSR 寄存器 stval (S-mode Trap Value)，它保存了导致异常的虚拟地址
-    asm volatile ("csrr %0, stval" : "=r"(stval));
-    
-    printf("Page fault! epc = 0x%016lx, stval = 0x%016lx, cause = %d\n", epc, stval, cause);
+      // TODO: 
+      // 1. get the faulting address from stval register
+      asm volatile("csrr %0, stval" : "=r"(stval));
 
-    struct vm_area_struct* vma;
-    // 遍历当前进程的所有虚拟内存区域
-    list_for_each_entry(vma, &current->mm.vm->vm_list, vm_list) {
-      // 检查 stval 是否在 [vm_start, vm_end) 区间内
-      if (stval >= vma->vm_start && stval < vma->vm_end) {
-        
-        // 0xc (12): Instruction Page Fault -> 需要可执行权限 (PTE_X)
-        // 0xd (13): Load Page Fault        -> 需要可读权限 (PTE_R)
-        // 0xf (15): Store/AMO Page Fault   -> 需要可写权限 (PTE_W)
-        
-        int permission_pass = 0;
-        
-        if (cause == 12 && (vma->vm_flags & PTE_X)) {
-            permission_pass = 1;
-        } else if (cause == 13 && (vma->vm_flags & PTE_R)) {
-            permission_pass = 1;
-        } else if (cause == 15 && (vma->vm_flags & PTE_W)) {
-            permission_pass = 1;
-        }
+      printf("Page fault! epc = 0x%016lx, stval = 0x%016lx\n", epc, stval);
 
-        if (permission_pass) {
-            // 4. if valid, allocate physical pages, map it, mark mapped, and return
-            
-            // 计算当前进程页表的根物理地址
-            uint64_t *pgtbl = (uint64_t *)((current->satp & 0xFFFFFFFFFFF) << 12);
-            
-            // 必须按页对齐分配。将故障地址向下取整到最近的 4KB 边界
-            uint64_t va_start = stval & ~(0xFFF); 
-            
-            // 分配 1 个物理页
-            uint64_t pa = (uint64_t)alloc_pages(1);
-            
-            if (pa == 0) {
-                printf("Error: Out of memory in page fault handler\n");
-                break; 
+
+      struct vm_area_struct* vma;
+      list_for_each_entry(vma, &current->mm.vm->vm_list, vm_list) {
+        // TODO: 
+        if(stval>=vma->vm_start && stval<vma->vm_end){
+          // 2. check whether the faulting address is in the range of a vm area
+          if( (vma->vm_flags & PTE_V) && (vma->vm_flags & PTE_U) && 
+             (((vma->vm_flags & PTE_X) && cause == 0xc) ||
+              ((vma->vm_flags & PTE_R) && cause == 0xd) ||
+              ((vma->vm_flags & PTE_R) && (vma->vm_flags & PTE_W) && cause == 0xf))
+              ){
+            // 3. check the permission of the vm area. The vma must be PTE_X/R/W according to the faulting cause, and also be PTE_V, PTE_U
+            uint64_t pa = alloc_pages((vma->vm_end - vma->vm_start)/PAGE_SIZE);
+            if(pa == 0){
+              // [start,end)
+              printf("fault! can't allocate pages!\n");
+              sp_ptr[16] += 4;
+              return;
             }
-
-            // 建立映射
-            create_mapping(pgtbl, va_start, pa, 4096, vma->vm_flags | PTE_V | PTE_U);
-            
-            // 标记该区域已被映射（
+            create_mapping((current->satp)<<21>>9,vma->vm_start,pa,(vma->vm_end-vma->vm_start),vma->vm_flags);
             vma->mapped = 1;
-            
-            asm volatile ("sfence.vma");
-
-            // 不要执行下面的 sp_ptr[16] += 4。
-            return; 
-
-        } else {
-            printf("Permission denied! Cause: %d, VM Flags: 0x%lx\n", cause, vma->vm_flags);
-            break; 
+            // 4. if the faulting address is valid, allocate physical pages, map it to the vm area, mark the vma mapped(vma->mapped = 1), and return
+            return;
+          }else{
+            // 5. otherwise, print error message and add 4 to the sepc
+              printf("Wrong permission! scause: %llx flags: %llx\n",cause,vma->vm_flags);
+              sp_ptr[16] += 4;
+              return;
+          }
         }
       }
+      // 6. if the faulting address is not in the range of any vm area, add 4 to the sepc (DONE)
+      printf("Unhandled page fault! addr = 0x%016lx\n", stval);
+      sp_ptr[16] += 4;
+      return;
     }
-    
-    // 6. if faulting address is not in any vm area (loop finished)
-    // OR permission check failed (break from loop)
-    printf("Unhandled Page Fault at 0x%lx. Skipping instruction.\n", stval);
-    sp_ptr[16] += 4; // 跳过当前指令 (sepc = sepc + 4)
-    return;
-  }
     // syscall from user mode
     else if (cause == 0x8) {
       // 根据我们规定的接口规范，从a7中读取系统调用号，然后从a0~a5读取参数，调用对应的系统调用处理函数，最后把返回值保存在a0~a1中。

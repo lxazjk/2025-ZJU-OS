@@ -28,8 +28,7 @@ void handler_s(uint64_t cause, uint64_t epc, uint64_t sp) {
       uint64_t stval;
       uint64_t* sp_ptr = (uint64_t*)(sp);
 
-      // TODO: 
-      // 1. get the faulting address from stval register
+      // 读取引发缺页的虚拟地址
       asm volatile("csrr %0, stval" : "=r"(stval));
 
       printf("Page fault! epc = 0x%016lx, stval = 0x%016lx\n", epc, stval);
@@ -37,35 +36,29 @@ void handler_s(uint64_t cause, uint64_t epc, uint64_t sp) {
 
       struct vm_area_struct* vma;
       list_for_each_entry(vma, &current->mm.vm->vm_list, vm_list) {
-        // TODO: 
         if(stval>=vma->vm_start && stval<vma->vm_end){
-          // 2. check whether the faulting address is in the range of a vm area
+          // 检查 VMA 的权限位是否允许本次操作
           if( (vma->vm_flags & PTE_V) && (vma->vm_flags & PTE_U) && 
-             (((vma->vm_flags & PTE_X) && cause == 0xc) ||
-              ((vma->vm_flags & PTE_R) && cause == 0xd) ||
-              ((vma->vm_flags & PTE_R) && (vma->vm_flags & PTE_W) && cause == 0xf))
-              ){
-            // 3. check the permission of the vm area. The vma must be PTE_X/R/W according to the faulting cause, and also be PTE_V, PTE_U
+            (((vma->vm_flags & PTE_X) && cause == 0xc) ||       // 取指缺页 (需可执行)
+              ((vma->vm_flags & PTE_R) && cause == 0xd) ||       // 读缺页 (需可读)
+              ((vma->vm_flags & PTE_R) && (vma->vm_flags & PTE_W) && cause == 0xf))) // 写缺页 (需可读写) 
+          {
             uint64_t pa = alloc_pages((vma->vm_end - vma->vm_start)/PAGE_SIZE);
             if(pa == 0){
-              // [start,end)
               printf("fault! can't allocate pages!\n");
               sp_ptr[16] += 4;
               return;
             }
             create_mapping((current->satp)<<21>>9,vma->vm_start,pa,(vma->vm_end-vma->vm_start),vma->vm_flags);
             vma->mapped = 1;
-            // 4. if the faulting address is valid, allocate physical pages, map it to the vm area, mark the vma mapped(vma->mapped = 1), and return
             return;
           }else{
-            // 5. otherwise, print error message and add 4 to the sepc
               printf("Wrong permission! scause: %llx flags: %llx\n",cause,vma->vm_flags);
               sp_ptr[16] += 4;
               return;
           }
         }
       }
-      // 6. if the faulting address is not in the range of any vm area, add 4 to the sepc (DONE)
       printf("Unhandled page fault! addr = 0x%016lx\n", stval);
       sp_ptr[16] += 4;
       return;

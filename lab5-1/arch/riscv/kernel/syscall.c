@@ -38,7 +38,6 @@ struct ret_info syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1, uint
         // arg0 (addr) 和 arg1 (len)
         vma->vm_start = arg0;
         vma->vm_end = arg0 + arg1;
-        // vm_flags 会在缺页异常时用来检查你是否在非法操作
         vma->vm_flags = arg2; 
         // 标记这块地还没对应物理内存
         vma->mapped = 0;
